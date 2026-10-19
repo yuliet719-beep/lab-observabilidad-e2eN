@@ -1,0 +1,31 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 15s
+  external_labels: { lab: e2e-observability }
+rule_files:
+  - /etc/prometheus/rules/*.yml
+alerting:
+  alertmanagers:
+    - static_configs: [{ targets: ["alertmanager:9093"] }]
+scrape_configs:
+  - job_name: otel-gateway          # métricas OTel (apps) + spanmetrics + servicegraph
+    honor_labels: true
+    static_configs: [{ targets: ["otel-gateway:8889"] }]
+  - job_name: collectors
+    static_configs: [{ targets: ["otel-gcp:8888", "otel-aws:8888", "otel-gateway:8888"] }]
+  - job_name: mesh-envoy            # métricas L7 del service mesh
+    metrics_path: /stats/prometheus
+    static_configs:
+      - targets: ["mesh-service-a:9901"]
+        labels: { mesh_workload: service-a, cloud_provider: gcp }
+      - targets: ["mesh-service-b:9901"]
+        labels: { mesh_workload: service-b, cloud_provider: aws }
+      - targets: ["mesh-data-service:9901"]
+        labels: { mesh_workload: data-service, cloud_provider: gcp }
+  - job_name: flowlogs              # VPC Flow Logs (GCP+AWS) agregados
+    static_configs: [{ targets: ["host.docker.internal:9108"] }]
+  - job_name: security-scanner      # CVEs activos (Trivy)
+    scrape_interval: 30s
+    static_configs: [{ targets: ["security-scanner:9109"] }]
+  - job_name: correlator
+    static_configs: [{ targets: ["correlator:9000"] }]

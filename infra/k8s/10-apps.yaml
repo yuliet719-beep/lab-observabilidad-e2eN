@@ -1,0 +1,57 @@
+# service-a y data-service en GKE Autopilot (service-b corre en AWS ECS: infra/aws/ecs.tf)
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: service-a, namespace: lab, labels: { app: service-a } }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: service-a } }
+  template:
+    metadata: { labels: { app: service-a, version: v1 } }
+    spec:
+      serviceAccountName: lab-apps
+      containers:
+        - name: app
+          image: docker.io/yulietrojas/service-a:1.0
+          ports: [{ containerPort: 8000, name: http }]
+          env:
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.lab:4317" }
+            - { name: OTEL_SEMCONV_STABILITY_OPT_IN, value: "http,database" }
+            - { name: CLOUD_PROVIDER, value: gcp }
+            - { name: SERVICE_B_URL, value: "http://service-b.lab.aws.internal:10000" }   # vía HA VPN GCP<->AWS
+          resources: { requests: { cpu: 250m, memory: 256Mi } }
+          readinessProbe: { httpGet: { path: /health, port: 8000 } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: service-a, namespace: lab }
+spec: { selector: { app: service-a }, ports: [{ name: http, port: 80, targetPort: 8000 }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: data-service, namespace: lab, labels: { app: data-service } }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: data-service } }
+  template:
+    metadata: { labels: { app: data-service, version: v1 } }
+    spec:
+      serviceAccountName: lab-apps
+      containers:
+        - name: app
+          image: docker.io/yulietrojas/data-service:1.0
+          ports: [{ containerPort: 8000, name: http }]
+          env:
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.lab:4317" }
+            - { name: OTEL_SEMCONV_STABILITY_OPT_IN, value: "http,database" }
+            - { name: CLOUD_PROVIDER, value: gcp }
+            - { name: NOISE_PROFILE, value: "off" }
+            - { name: CLOUDSQL_DSN, valueFrom: { secretKeyRef: { name: db, key: cloudsql_dsn } } }
+            - { name: RDS_DSN, valueFrom: { secretKeyRef: { name: db, key: rds_dsn } } }
+            - { name: CHAOS_TOKEN, valueFrom: { secretKeyRef: { name: db, key: chaos_token } } }
+          resources: { requests: { cpu: 250m, memory: 256Mi } }
+          readinessProbe: { httpGet: { path: /health, port: 8000 } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: data-service, namespace: lab }
+spec: { selector: { app: data-service }, ports: [{ name: http, port: 80, targetPort: 8000 }] }

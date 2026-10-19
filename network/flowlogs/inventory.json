@@ -1,0 +1,27 @@
+{
+  "workloads": [
+    {"name": "loadgen-clients", "cloud": "internet", "ips": ["10.10.0.10"]},
+    {"name": "mesh-service-a",  "cloud": "gcp", "ips": ["10.10.0.20", "10.20.0.20"]},
+    {"name": "service-a",       "cloud": "gcp", "ips": ["10.20.0.21"]},
+    {"name": "mesh-service-b",  "cloud": "aws", "ips": ["10.20.0.25", "10.30.0.20"]},
+    {"name": "service-b",       "cloud": "aws", "ips": ["10.30.0.21"]},
+    {"name": "mesh-data-service", "cloud": "gcp", "ips": ["10.20.0.30", "10.30.0.30"]},
+    {"name": "data-service",    "cloud": "gcp", "ips": ["10.20.0.31", "10.30.0.31"]},
+    {"name": "cloudsql-orders", "cloud": "gcp", "ips": ["10.20.0.40"]},
+    {"name": "rds-inventory",   "cloud": "aws", "ips": ["10.30.0.40"]},
+    {"name": "otel-gcp",        "cloud": "gcp", "ips": ["10.20.0.50"]},
+    {"name": "otel-aws",        "cloud": "aws", "ips": ["10.30.0.50"]}
+  ],
+  "allowed_edges": [
+    ["loadgen-clients", "mesh-service-a", 10000],
+    ["mesh-service-a", "service-a", 8000],
+    ["service-a", "mesh-service-b", 10000],
+    ["mesh-service-b", "service-b", 8000],
+    ["service-b", "mesh-data-service", 10000],
+    ["mesh-data-service", "data-service", 8000],
+    ["data-service", "cloudsql-orders", 5432],
+    ["data-service", "rds-inventory", 5432]
+  ],
+  "observability_plane": ["otel-gcp", "otel-aws"],
+  "server_ports": [10000, 8000, 5432, 4317, 4318, 9901, 53]
+}

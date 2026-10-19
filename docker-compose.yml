@@ -1,0 +1,226 @@
+# Sandbox "producción simulada" multi-nube del LAB integrador.
+# Redes = VPC: edge (internet), gcp (VPC GCP), aws (VPC AWS), obs (plano de observabilidad).
+# Los contenedores conectados a gcp y aws a la vez representan el extremo de la interconexión (VPN HA / Cloud Interconnect).
+name: lab-e2e
+
+x-app: &app
+  restart: unless-stopped
+  environment: &appenv
+    OTEL_SEMCONV_STABILITY_OPT_IN: http,database
+    DEPLOY_ENV: sandbox
+
+networks:
+  edge: { driver_opts: { com.docker.network.bridge.name: br-edge }, ipam: { config: [{ subnet: 10.10.0.0/24 }] } }
+  gcp:  { driver_opts: { com.docker.network.bridge.name: br-gcp },  ipam: { config: [{ subnet: 10.20.0.0/24 }] } }
+  aws:  { driver_opts: { com.docker.network.bridge.name: br-aws },  ipam: { config: [{ subnet: 10.30.0.0/24 }] } }
+  obs:  { driver_opts: { com.docker.network.bridge.name: br-obs },  ipam: { config: [{ subnet: 10.40.0.0/24 }] } }
+
+volumes: { promdata: {}, lokidata: {} }
+
+services:
+  # ---------------- Datos ----------------
+  cloudsql:   # Cloud SQL for PostgreSQL (GCP)
+    cpu_shares: 2048
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "max_connections=100"]
+    environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: orders }
+    volumes: ["./db/init-cloudsql.sql:/docker-entrypoint-initdb.d/init.sql:ro"]
+    networks: { gcp: { ipv4_address: 10.20.0.40 } }
+    healthcheck: { test: ["CMD", "pg_isready", "-U", "app"], interval: 3s, retries: 20 }
+  rds:        # Amazon RDS for PostgreSQL (AWS)
+    cpu_shares: 2048
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: inventory }
+    volumes: ["./db/init-rds.sql:/docker-entrypoint-initdb.d/init.sql:ro"]
+    networks: { aws: { ipv4_address: 10.30.0.40 } }
+    healthcheck: { test: ["CMD", "pg_isready", "-U", "app"], interval: 3s, retries: 20 }
+
+  # ---------------- Microservicios + sidecars mesh ----------------
+  service-a:
+    cpu_shares: 2048
+    <<: *app
+    image: lab/service-a:1.0
+    build: { context: ./services, args: { SERVICE: service-a } }
+    environment:
+      <<: *appenv
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-gcp:4317
+      CLOUD_PROVIDER: gcp
+      CLOUD_PLATFORM: gcp_kubernetes_engine
+      CLOUD_REGION: us-east1
+      SERVICE_B_URL: http://mesh-service-b:10000
+    networks: { gcp: { ipv4_address: 10.20.0.21 } }
+  mesh-service-a:
+    cpu_shares: 2048
+    image: envoyproxy/envoy:v1.33-latest
+    command: ["-c", "/etc/envoy/envoy.yaml", "--service-cluster", "service-a", "--log-level", "warn"]
+    volumes: ["./mesh/envoy-service-a.yaml:/etc/envoy/envoy.yaml:ro"]
+    ports: ["127.0.0.1:10000:10000"]
+    networks: { edge: { ipv4_address: 10.10.0.20 }, gcp: { ipv4_address: 10.20.0.20 }, obs: {} }
+
+  service-b:
+    cpu_shares: 2048
+    <<: *app
+    image: lab/service-b:1.0
+    build: { context: ./services, args: { SERVICE: service-b } }
+    environment:
+      <<: *appenv
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-aws:4317
+      CLOUD_PROVIDER: aws
+      CLOUD_PLATFORM: aws_ecs
+      CLOUD_REGION: us-east-1
+      DATA_SERVICE_URL: http://mesh-data-service:10000
+    networks: { aws: { ipv4_address: 10.30.0.21 } }
+  mesh-service-b:
+    cpu_shares: 2048
+    image: envoyproxy/envoy:v1.33-latest
+    command: ["-c", "/etc/envoy/envoy.yaml", "--service-cluster", "service-b", "--log-level", "warn"]
+    volumes: ["./mesh/envoy-service-b.yaml:/etc/envoy/envoy.yaml:ro"]
+    networks: { gcp: { ipv4_address: 10.20.0.25 }, aws: { ipv4_address: 10.30.0.20 }, obs: {} }
+
+  data-service:
+    cpu_shares: 2048
+    <<: *app
+    image: lab/data-service:1.0
+    build: { context: ./services, args: { SERVICE: data-service } }
+    environment:
+      <<: *appenv
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-gcp:4317
+      CLOUD_PROVIDER: gcp
+      CLOUD_PLATFORM: gcp_kubernetes_engine
+      CLOUD_REGION: us-east1
+      CLOUDSQL_DSN: postgresql://app:app@cloudsql:5432/orders
+      RDS_DSN: postgresql://app:app@rds:5432/inventory
+      NOISE_PROFILE: "${NOISE_PROFILE:-on}"
+      NOISE_SEED: "42"
+      CHAOS_TOKEN: sandbox-only
+    networks: { gcp: { ipv4_address: 10.20.0.31 }, aws: { ipv4_address: 10.30.0.31 }, obs: {} }
+    depends_on: { cloudsql: { condition: service_healthy }, rds: { condition: service_healthy } }
+  mesh-data-service:
+    cpu_shares: 2048
+    image: envoyproxy/envoy:v1.33-latest
+    command: ["-c", "/etc/envoy/envoy.yaml", "--service-cluster", "data-service", "--log-level", "warn"]
+    volumes: ["./mesh/envoy-data-service.yaml:/etc/envoy/envoy.yaml:ro"]
+    networks: { gcp: { ipv4_address: 10.20.0.30 }, aws: { ipv4_address: 10.30.0.30 }, obs: {} }
+
+  # ---------------- Telemetría (OTel) ----------------
+  otel-gcp:
+    cpus: 0.5
+    cpu_shares: 256
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes: ["./otel/collector-gcp.yaml:/etc/otel/config.yaml:ro"]
+    networks: { gcp: { ipv4_address: 10.20.0.50 }, obs: {} }
+  otel-aws:
+    cpus: 0.5
+    cpu_shares: 256
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes: ["./otel/collector-aws.yaml:/etc/otel/config.yaml:ro"]
+    networks: { aws: { ipv4_address: 10.30.0.50 }, obs: {} }
+  otel-gateway:
+    cpus: 0.6
+    cpu_shares: 256
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes: ["./otel/collector-gateway.yaml:/etc/otel/config.yaml:ro"]
+    networks: [obs]
+
+  # ---------------- Backends ----------------
+  jaeger:
+    cpus: 0.8
+    cpu_shares: 256
+    image: jaegertracing/jaeger:2.4.0
+    command: ["--config", "/etc/jaeger/config.yaml"]
+    volumes: ["./observability/jaeger/config.yaml:/etc/jaeger/config.yaml:ro"]
+    ports: ["127.0.0.1:16686:16686"]
+    networks: [obs]
+  loki:
+    cpus: 0.3
+    cpu_shares: 256
+    image: grafana/loki:3.4.2
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes: ["./observability/loki/loki.yaml:/etc/loki/loki.yaml:ro", "lokidata:/loki"]
+    networks: [obs]
+  prometheus:
+    cpus: 0.5
+    cpu_shares: 256
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--enable-feature=exemplar-storage", "--web.enable-lifecycle"]
+    volumes: ["./observability/prometheus:/etc/prometheus:ro", "promdata:/prometheus"]
+    ports: ["127.0.0.1:9090:9090"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    networks: [obs]
+  alertmanager:
+    cpus: 0.2
+    cpu_shares: 256
+    image: quay.io/prometheus/alertmanager:v0.28.1
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes: ["./observability/alertmanager:/etc/alertmanager:ro"]
+    ports: ["127.0.0.1:9093:9093"]
+    networks: [obs]
+  grafana:
+    cpus: 0.4
+    cpu_shares: 256
+    image: grafana/grafana:11.5.2
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/golden-signals.json
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["127.0.0.1:3000:3000"]
+    networks: [obs]
+
+  # ---------------- AIOps / seguridad / red ----------------
+  correlator:
+    cpus: 0.3
+    cpu_shares: 256
+    image: lab/tools:1.0
+    build: { context: ., dockerfile: tools/Dockerfile }
+    command: ["uvicorn", "correlator:app", "--host", "0.0.0.0", "--port", "9000", "--no-access-log"]
+    environment: { DATA_DIR: /data }
+    volumes: ["./data:/data"]
+    ports: ["127.0.0.1:9000:9000"]
+    networks: [obs]
+  flowlogs:   # emulador VPC Flow Logs (captura en los bridges de las VPC)
+    cpus: 0.2
+    cpu_shares: 256
+    image: lab/tools:1.0
+    command: ["python", "flowlogs.py"]
+    network_mode: host
+    cap_add: [NET_RAW, NET_ADMIN]
+    environment: { OUT_DIR: /data/flowlogs, INVENTORY: /etc/flowlogs/inventory.json }
+    volumes: ["./data:/data", "./network/flowlogs/inventory.json:/etc/flowlogs/inventory.json:ro"]
+  security-scanner:
+    cpus: 0.1
+    cpu_shares: 256
+    image: lab/tools:1.0
+    command: ["python", "exporter.py"]
+    environment: { TRIVY_DIR: /data/trivy }
+    volumes: ["./data:/data"]
+    networks: [obs]
+
+  loadgen:
+    cpus: 0.3
+    cpu_shares: 256
+    image: lab/tools:1.0
+    command: ["python", "loadgen.py"]
+    environment: { TARGET: "http://10.10.0.20:10000", RPS: "10" }
+    networks: { edge: { ipv4_address: 10.10.0.10 } }
+    depends_on: [mesh-service-a]
+
+  intruder:   # solo se levanta con: docker compose --profile attack run --rm intruder
+    image: lab/tools:1.0
+    profiles: [attack]
+    command: ["python", "intruder.py"]
+    networks: { edge: { ipv4_address: 10.10.0.66 }, gcp: { ipv4_address: 10.20.0.250 } }
+
+  chaos-runner:   # docker compose --profile chaos run --rm -e T0=$(date +%s) chaos-runner
+    image: lab/tools:1.0
+    profiles: [chaos]
+    command: ["python", "run_experiments.py"]
+    environment: { DATA_DIR: /data, CHAOS_TOKEN: sandbox-only }
+    volumes: ["./data:/data"]
+    networks: [obs]

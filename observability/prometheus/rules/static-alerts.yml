@@ -1,0 +1,25 @@
+# Pipeline "static": umbrales fijos típicos por servicio (línea de comparación del Módulo B)
+groups:
+  - name: static-thresholds
+    interval: 15s
+    rules:
+      - alert: StaticHighErrorRate
+        expr: sli:error_ratio:rate1m > 0.01
+        for: 15s
+        labels: { pipeline: static, severity: page }
+        annotations: { summary: "Error rate > 1 % en {{ $labels.service_name }}" }
+      - alert: StaticHighLatencyP99
+        expr: sli:latency_p99:1m > 0.2
+        for: 15s
+        labels: { pipeline: static, severity: page }
+        annotations: { summary: "p99 > 200 ms en {{ $labels.service_name }}" }
+      - alert: StaticMeshUpstream5xx
+        expr: sum by (mesh_workload) (rate(envoy_http_downstream_rq_xx{envoy_http_conn_manager_prefix="ingress", envoy_response_code_class="5"}[1m])) > 0.1
+        for: 15s
+        labels: { pipeline: static, severity: page }
+        annotations: { summary: "Sidecar {{ $labels.mesh_workload }} devuelve 5xx" }
+      - alert: StaticDBSlowQueries
+        expr: histogram_quantile(0.99, sum by (le) (rate(traces_span_metrics_duration_seconds_bucket{service_name="data-service", db_system_name="postgresql"}[1m]))) > 0.1
+        for: 15s
+        labels: { pipeline: static, severity: page, service_name: data-service }
+        annotations: { summary: "Consultas DB p99 > 100 ms" }

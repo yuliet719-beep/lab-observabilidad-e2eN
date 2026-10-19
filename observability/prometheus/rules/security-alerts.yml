@@ -1,0 +1,33 @@
+# Observabilidad de red y seguridad (Módulo C)
+groups:
+  - name: security
+    interval: 15s
+    rules:
+      - alert: SecAuthBruteForce
+        expr: |
+          sum(rate(auth_attempts_total{outcome="failure"}[1m]))
+            > clamp_min(aiops:auth_failures:baseline_avg30m + 3 * aiops:auth_failures:baseline_std30m, 0.5)
+        for: 30s
+        labels: { pipeline: security, severity: page, finding_type: "TTPs/Credential Access/Brute Force" }
+        annotations: { summary: "Intentos de autenticación fallidos anómalos ({{ $value | humanize }}/s)" }
+      - alert: SecUnexpectedEastWestFlow
+        expr: sum by (src_svc, dst_svc, dst_port) (increase(vpc_flow_unexpected_total[1m])) > 0
+        labels: { pipeline: security, severity: page, finding_type: "Unusual Behaviors/Network Flow" }
+        annotations: { summary: "Flujo E-W no permitido {{ $labels.src_svc }} -> {{ $labels.dst_svc }}:{{ $labels.dst_port }}" }
+      - alert: SecRejectedFlowsSpike
+        expr: sum by (src_svc) (rate(vpc_flow_records_total{action="REJECT"}[1m])) > 0.2
+        for: 20s
+        labels: { pipeline: security, severity: page, finding_type: "TTPs/Discovery/Port Scan" }
+        annotations: { summary: "Flujos REJECT desde {{ $labels.src_svc }} (posible escaneo de puertos)" }
+      - alert: SecCrossCloudEgressAnomaly
+        expr: |
+          sum(rate(vpc_flow_bytes_total{direction="cross-cloud"}[1m]))
+            > 3 * avg_over_time(sum(rate(vpc_flow_bytes_total{direction="cross-cloud"}[1m]))[30m:30s] offset 5m)
+          and sum(rate(vpc_flow_bytes_total{direction="cross-cloud"}[1m])) > 50000
+        for: 1m
+        labels: { pipeline: security, severity: ticket, finding_type: "Effects/Data Exfiltration" }
+        annotations: { summary: "Tráfico entre nubes 3× sobre su línea base" }
+      - alert: SecCriticalCVEActive
+        expr: sum by (image) (security_cves_active{severity="CRITICAL"}) > 0
+        labels: { pipeline: security, severity: ticket, finding_type: "Software and Configuration Checks/Vulnerabilities/CVE" }
+        annotations: { summary: "{{ $labels.image }} tiene {{ $value }} CVE críticos activos" }

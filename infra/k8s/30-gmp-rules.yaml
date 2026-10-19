@@ -1,0 +1,185 @@
+# Generado por gen_gmp_rules.py — mismas reglas del sandbox evaluadas por GMP
+apiVersion: monitoring.googleapis.com/v1
+kind: Rules
+metadata:
+  name: recording
+  namespace: lab
+spec:
+  groups:
+  - name: sli
+    interval: 30s
+    rules:
+    - record: sli:requests:rate1m
+      expr: sum by (service_name, cloud_provider) (rate(http_server_request_duration_seconds_count[1m]))
+    - record: sli:errors:rate1m
+      expr: sum by (service_name, cloud_provider) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[1m]))
+        or sli:requests:rate1m * 0
+    - record: sli:error_ratio:rate1m
+      expr: sli:errors:rate1m / clamp_min(sli:requests:rate1m, 0.001)
+    - record: sli:latency_p99:1m
+      expr: histogram_quantile(0.99, sum by (service_name, cloud_provider, le) (rate(http_server_request_duration_seconds_bucket[1m])))
+    - record: sli:latency_good_ratio:rate1m
+      expr: 'sum by (service_name, cloud_provider) (rate(http_server_request_duration_seconds_bucket{le="0.3"}[1m]))
+
+        / clamp_min(sum by (service_name, cloud_provider) (rate(http_server_request_duration_seconds_count[1m])),
+        0.001)
+
+        '
+    - record: slo:requests:increase1m
+      expr: sum by (service_name) (increase(http_server_request_duration_seconds_count[1m]))
+    - record: slo:bad_availability:increase1m
+      expr: sum by (service_name) (increase(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[1m]))
+        or slo:requests:increase1m * 0
+    - record: slo:bad_latency:increase1m
+      expr: 'sum by (service_name) (increase(http_server_request_duration_seconds_count[1m]))
+
+        - sum by (service_name) (increase(http_server_request_duration_seconds_bucket{le="0.3"}[1m]))
+
+        '
+  - name: aiops-baseline
+    interval: 30s
+    rules:
+    - record: aiops:error_ratio:baseline_avg30m
+      expr: avg_over_time(sli:error_ratio:rate1m[30m] offset 5m)
+    - record: aiops:error_ratio:baseline_std30m
+      expr: stddev_over_time(sli:error_ratio:rate1m[30m] offset 5m)
+    - record: aiops:latency_p99:baseline_avg30m
+      expr: avg_over_time(sli:latency_p99:1m[30m] offset 5m)
+    - record: aiops:latency_p99:baseline_std30m
+      expr: stddev_over_time(sli:latency_p99:1m[30m] offset 5m)
+    - record: aiops:latency_p99:band_upper
+      expr: aiops:latency_p99:baseline_avg30m + 2 * aiops:latency_p99:baseline_std30m
+    - record: aiops:error_ratio:band_upper
+      expr: clamp_min(aiops:error_ratio:baseline_avg30m + 2 * aiops:error_ratio:baseline_std30m,
+        0.005)
+    - record: aiops:auth_failures:baseline_avg30m
+      expr: avg_over_time(sum(rate(auth_attempts_total{outcome="failure"}[1m]))[30m:30s]
+        offset 5m)
+    - record: aiops:auth_failures:baseline_std30m
+      expr: stddev_over_time(sum(rate(auth_attempts_total{outcome="failure"}[1m]))[30m:30s]
+        offset 5m)
+---
+apiVersion: monitoring.googleapis.com/v1
+kind: Rules
+metadata:
+  name: aiops-alerts
+  namespace: lab
+spec:
+  groups:
+  - name: aiops-detection
+    interval: 30s
+    rules:
+    - alert: AIOpsCorrelatedErrorLatency
+      expr: '(sli:error_ratio:rate1m > on(service_name, cloud_provider) aiops:error_ratio:band_upper)
+
+        and on(service_name, cloud_provider)
+
+        (sli:latency_p99:1m > 0.3)
+
+        '
+      for: 30s
+      labels:
+        pipeline: aiops
+        severity: page
+        signal: errors+latency
+      annotations:
+        summary: '{{ $labels.service_name }}: error rate anómalo ({{ $value | humanizePercentage
+          }}) correlacionado con p99 > SLO'
+        runbook_url: https://github.com/yuliet719-beep/lab-observabilidad-e2eN/blob/main/docs/RUNBOOK.md#correlated
+    - alert: AIOpsLatencyAnomalySLO
+      expr: '(sli:latency_p99:1m > on(service_name, cloud_provider) aiops:latency_p99:band_upper)
+
+        and on(service_name, cloud_provider)
+
+        (sli:latency_p99:1m > 0.3)
+
+        and on(service_name, cloud_provider)
+
+        (sli:latency_good_ratio:rate1m < 0.99)
+
+        '
+      for: 30s
+      labels:
+        pipeline: aiops
+        severity: page
+        signal: latency
+      annotations:
+        summary: '{{ $labels.service_name }}: p99 {{ $value | humanizeDuration }}
+          fuera de banda y sobre SLO'
+        runbook_url: https://github.com/yuliet719-beep/lab-observabilidad-e2eN/blob/main/docs/RUNBOOK.md#latency
+    - alert: AIOpsDataServiceAnomalyBand
+      expr: 'sli:latency_p99:1m{service_name="data-service"} > on(service_name, cloud_provider)
+        aiops:latency_p99:band_upper
+
+        and on(service_name, cloud_provider) sli:requests:rate1m > 1
+
+        '
+      for: 1m
+      labels:
+        pipeline: aiops
+        severity: ticket
+        signal: anomaly-band
+      annotations:
+        summary: data-service fuera de la banda de anomalía (±2σ)
+---
+apiVersion: monitoring.googleapis.com/v1
+kind: Rules
+metadata:
+  name: security-alerts
+  namespace: lab
+spec:
+  groups:
+  - name: security
+    interval: 30s
+    rules:
+    - alert: SecAuthBruteForce
+      expr: "sum(rate(auth_attempts_total{outcome=\"failure\"}[1m]))\n  > clamp_min(aiops:auth_failures:baseline_avg30m\
+        \ + 3 * aiops:auth_failures:baseline_std30m, 0.5)\n"
+      for: 30s
+      labels:
+        pipeline: security
+        severity: page
+        finding_type: TTPs/Credential Access/Brute Force
+      annotations:
+        summary: Intentos de autenticación fallidos anómalos ({{ $value | humanize
+          }}/s)
+    - alert: SecUnexpectedEastWestFlow
+      expr: sum by (src_svc, dst_svc, dst_port) (increase(vpc_flow_unexpected_total[1m]))
+        > 0
+      labels:
+        pipeline: security
+        severity: page
+        finding_type: Unusual Behaviors/Network Flow
+      annotations:
+        summary: Flujo E-W no permitido {{ $labels.src_svc }} -> {{ $labels.dst_svc
+          }}:{{ $labels.dst_port }}
+    - alert: SecRejectedFlowsSpike
+      expr: sum by (src_svc) (rate(vpc_flow_records_total{action="REJECT"}[1m])) >
+        0.2
+      for: 20s
+      labels:
+        pipeline: security
+        severity: page
+        finding_type: TTPs/Discovery/Port Scan
+      annotations:
+        summary: Flujos REJECT desde {{ $labels.src_svc }} (posible escaneo de puertos)
+    - alert: SecCrossCloudEgressAnomaly
+      expr: "sum(rate(vpc_flow_bytes_total{direction=\"cross-cloud\"}[1m]))\n  > 3\
+        \ * avg_over_time(sum(rate(vpc_flow_bytes_total{direction=\"cross-cloud\"\
+        }[1m]))[30m:30s] offset 5m)\nand sum(rate(vpc_flow_bytes_total{direction=\"\
+        cross-cloud\"}[1m])) > 50000\n"
+      for: 1m
+      labels:
+        pipeline: security
+        severity: ticket
+        finding_type: Effects/Data Exfiltration
+      annotations:
+        summary: Tráfico entre nubes 3× sobre su línea base
+    - alert: SecCriticalCVEActive
+      expr: sum by (image) (security_cves_active{severity="CRITICAL"}) > 0
+      labels:
+        pipeline: security
+        severity: ticket
+        finding_type: Software and Configuration Checks/Vulnerabilities/CVE
+      annotations:
+        summary: '{{ $labels.image }} tiene {{ $value }} CVE críticos activos'

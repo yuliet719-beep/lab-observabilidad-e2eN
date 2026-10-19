@@ -1,0 +1,37 @@
+# Pipeline "aiops": detección dinámica (línea base ±2σ) + correlación de señales (Módulo B)
+groups:
+  - name: aiops-detection
+    interval: 15s
+    rules:
+      # Regla de correlación exigida: error_rate > baseline + 2σ  Y  latency_p99 > SLO_threshold (300 ms)
+      - alert: AIOpsCorrelatedErrorLatency
+        expr: |
+          (sli:error_ratio:rate1m > on(service_name, cloud_provider) aiops:error_ratio:band_upper)
+          and on(service_name, cloud_provider)
+          (sli:latency_p99:1m > 0.3)
+        for: 30s
+        labels: { pipeline: aiops, severity: page, signal: errors+latency }
+        annotations:
+          summary: "{{ $labels.service_name }}: error rate anómalo ({{ $value | humanizePercentage }}) correlacionado con p99 > SLO"
+          runbook_url: "https://github.com/yuliet719-beep/lab-observabilidad-e2eN/blob/main/docs/RUNBOOK.md#correlated"
+      # Latencia anómala que además viola el SLO (cubre degradaciones sin errores, p. ej. E1)
+      - alert: AIOpsLatencyAnomalySLO
+        expr: |
+          (sli:latency_p99:1m > on(service_name, cloud_provider) aiops:latency_p99:band_upper)
+          and on(service_name, cloud_provider)
+          (sli:latency_p99:1m > 0.3)
+          and on(service_name, cloud_provider)
+          (sli:latency_good_ratio:rate1m < 0.99)
+        for: 30s
+        labels: { pipeline: aiops, severity: page, signal: latency }
+        annotations:
+          summary: "{{ $labels.service_name }}: p99 {{ $value | humanizeDuration }} fuera de banda y sobre SLO"
+          runbook_url: "https://github.com/yuliet719-beep/lab-observabilidad-e2eN/blob/main/docs/RUNBOOK.md#latency"
+      # Equivalente a GCP Cloud Monitoring / CloudWatch Anomaly Detection en data-service (no pagina)
+      - alert: AIOpsDataServiceAnomalyBand
+        expr: |
+          sli:latency_p99:1m{service_name="data-service"} > on(service_name, cloud_provider) aiops:latency_p99:band_upper
+          and on(service_name, cloud_provider) sli:requests:rate1m > 1
+        for: 1m
+        labels: { pipeline: aiops, severity: ticket, signal: anomaly-band }
+        annotations: { summary: "data-service fuera de la banda de anomalía (±2σ)" }

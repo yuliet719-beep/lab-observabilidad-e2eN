@@ -1,0 +1,44 @@
+# Gateway central multi-nube: deriva métricas RED y grafo de servicios desde trazas (correlación entre nubes)
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+processors:
+  memory_limiter: { check_interval: 1s, limit_mib: 512 }
+  batch: { timeout: 1s }
+connectors:
+  servicegraph:
+    latency_histogram_buckets: [10ms, 25ms, 50ms, 100ms, 200ms, 250ms, 300ms, 500ms, 1s, 2s]
+    dimensions: [cloud.provider]
+    virtual_node_peer_attributes: [db.system.name, db.namespace, server.address]
+    store: { ttl: 5s, max_items: 10000 }
+  spanmetrics:
+    histogram:
+      explicit: { buckets: [10ms, 25ms, 50ms, 100ms, 200ms, 250ms, 300ms, 500ms, 1s, 2s] }
+    dimensions:
+      - name: cloud.provider
+      - name: http.response.status_code
+      - name: db.system.name
+    exemplars: { enabled: true }
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls: { insecure: true }
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion: { enabled: true }
+    enable_open_metrics: true
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+extensions:
+  health_check: { endpoint: 0.0.0.0:13133 }
+service:
+  extensions: [health_check]
+  telemetry:
+    metrics:
+      readers:
+        - pull: { exporter: { prometheus: { host: 0.0.0.0, port: 8888 } } }
+  pipelines:
+    traces:  { receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlp/jaeger, servicegraph, spanmetrics] }
+    metrics: { receivers: [otlp, servicegraph, spanmetrics], processors: [memory_limiter, batch], exporters: [prometheus] }
+    logs:    { receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlphttp/loki] }

@@ -1,0 +1,46 @@
+# Indicadores SLI y líneas base dinámicas (AIOps). Ventana base: 30 min con offset de 5 min
+groups:
+  - name: sli
+    interval: 15s
+    rules:
+      - record: sli:requests:rate1m
+        expr: sum by (service_name, cloud_provider) (rate(http_server_request_duration_seconds_count[1m]))
+      - record: sli:errors:rate1m
+        expr: sum by (service_name, cloud_provider) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[1m])) or sli:requests:rate1m * 0
+      - record: sli:error_ratio:rate1m
+        expr: sli:errors:rate1m / clamp_min(sli:requests:rate1m, 0.001)
+      - record: sli:latency_p99:1m
+        expr: histogram_quantile(0.99, sum by (service_name, cloud_provider, le) (rate(http_server_request_duration_seconds_bucket[1m])))
+      - record: sli:latency_good_ratio:rate1m
+        expr: |
+          sum by (service_name, cloud_provider) (rate(http_server_request_duration_seconds_bucket{le="0.3"}[1m]))
+          / clamp_min(sum by (service_name, cloud_provider) (rate(http_server_request_duration_seconds_count[1m])), 0.001)
+      # Contadores para error budget (SLO 28 días)
+      - record: slo:requests:increase1m
+        expr: sum by (service_name) (increase(http_server_request_duration_seconds_count[1m]))
+      - record: slo:bad_availability:increase1m
+        expr: sum by (service_name) (increase(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[1m])) or slo:requests:increase1m * 0
+      - record: slo:bad_latency:increase1m
+        expr: |
+          sum by (service_name) (increase(http_server_request_duration_seconds_count[1m]))
+          - sum by (service_name) (increase(http_server_request_duration_seconds_bucket{le="0.3"}[1m]))
+  - name: aiops-baseline
+    interval: 15s
+    rules:
+      - record: aiops:error_ratio:baseline_avg30m
+        expr: avg_over_time(sli:error_ratio:rate1m[30m] offset 5m)
+      - record: aiops:error_ratio:baseline_std30m
+        expr: stddev_over_time(sli:error_ratio:rate1m[30m] offset 5m)
+      - record: aiops:latency_p99:baseline_avg30m
+        expr: avg_over_time(sli:latency_p99:1m[30m] offset 5m)
+      - record: aiops:latency_p99:baseline_std30m
+        expr: stddev_over_time(sli:latency_p99:1m[30m] offset 5m)
+      # Banda de anomalía (equivalente a CloudWatch ANOMALY_DETECTION_BAND(m, 2))
+      - record: aiops:latency_p99:band_upper
+        expr: aiops:latency_p99:baseline_avg30m + 2 * aiops:latency_p99:baseline_std30m
+      - record: aiops:error_ratio:band_upper
+        expr: clamp_min(aiops:error_ratio:baseline_avg30m + 2 * aiops:error_ratio:baseline_std30m, 0.005)
+      - record: aiops:auth_failures:baseline_avg30m
+        expr: avg_over_time(sum(rate(auth_attempts_total{outcome="failure"}[1m]))[30m:30s] offset 5m)
+      - record: aiops:auth_failures:baseline_std30m
+        expr: stddev_over_time(sum(rate(auth_attempts_total{outcome="failure"}[1m]))[30m:30s] offset 5m)

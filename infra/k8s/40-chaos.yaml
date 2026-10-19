@@ -1,0 +1,26 @@
+# Módulo D en GKE (solo sandbox). E2: error rate 10 % en data-service.
+# Opción A (mesh): abort HTTP 503 al 10 % con Cloud Service Mesh.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: { name: data-service-chaos-e2, namespace: lab, labels: { chaos: e2 } }
+spec:
+  hosts: [data-service.lab.svc.cluster.local]
+  http:
+    - fault:
+        abort: { percentage: { value: 10 }, httpStatus: 503 }
+      route: [{ destination: { host: data-service.lab.svc.cluster.local } }]
+---
+# Opción B (aplicación, usada en el sandbox): timeouts reales de BD al 10 % vía /admin/chaos
+apiVersion: batch/v1
+kind: Job
+metadata: { name: chaos-e2-enable, namespace: lab }
+spec:
+  template:
+    metadata: { annotations: { sidecar.istio.io/inject: "false" } }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: curl
+          image: curlimages/curl:8.11.1
+          env: [{ name: TOKEN, valueFrom: { secretKeyRef: { name: db, key: chaos_token } } }]
+          command: ["sh", "-c", "curl -sf -XPOST -H \"x-chaos-token: $TOKEN\" -H 'content-type: application/json' -d '{\"error_rate\":0.10}' http://data-service.lab/admin/chaos"]

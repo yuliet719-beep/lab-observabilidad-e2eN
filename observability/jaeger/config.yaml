@@ -1,0 +1,28 @@
+# Jaeger v2 (all-in-one) con almacenamiento en memoria acotado (sandbox).
+# En nube: GCP Cloud Trace / AWS X-Ray (ver infra/).
+service:
+  extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+extensions:
+  healthcheckv2: { use_v2: true, http: { endpoint: 0.0.0.0:13133 } }
+  jaeger_query:
+    storage: { traces: mem }
+    http: { endpoint: 0.0.0.0:16686 }
+  jaeger_storage:
+    backends:
+      mem:
+        memory: { max_traces: 8000 }
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+      http: { endpoint: 0.0.0.0:4318 }
+processors:
+  batch: {}
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: mem

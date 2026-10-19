@@ -1,0 +1,46 @@
+# OTel Collector en GKE: trazas -> Cloud Trace, métricas -> Managed Service for Prometheus, logs -> Cloud Logging
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: otel-collector, namespace: lab }
+data:
+  config.yaml: |
+    receivers:
+      otlp: { protocols: { grpc: { endpoint: 0.0.0.0:4317 } } }
+    processors:
+      memory_limiter: { check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 20 }
+      resourcedetection: { detectors: [gcp], timeout: 5s }
+      batch: {}
+    connectors:
+      servicegraph: { dimensions: [cloud.provider], virtual_node_peer_attributes: [db.system.name, db.namespace, server.address] }
+      spanmetrics: { dimensions: [{ name: http.response.status_code }, { name: db.system.name }] }
+    exporters:
+      googlecloud: { log: { default_log_name: lab-e2e } }
+      googlemanagedprometheus: {}
+    service:
+      pipelines:
+        traces:  { receivers: [otlp], processors: [memory_limiter, resourcedetection, batch], exporters: [googlecloud, servicegraph, spanmetrics] }
+        metrics: { receivers: [otlp, servicegraph, spanmetrics], processors: [memory_limiter, resourcedetection, batch], exporters: [googlemanagedprometheus] }
+        logs:    { receivers: [otlp], processors: [memory_limiter, resourcedetection, batch], exporters: [googlecloud] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: otel-collector, namespace: lab }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: otel-collector } }
+  template:
+    metadata: { labels: { app: otel-collector }, annotations: { sidecar.istio.io/inject: "false" } }
+    spec:
+      serviceAccountName: lab-apps   # Workload Identity: roles/cloudtrace.agent, monitoring.metricWriter, logging.logWriter
+      containers:
+        - name: otelcol
+          image: otel/opentelemetry-collector-contrib:0.120.0
+          args: ["--config=/conf/config.yaml"]
+          volumeMounts: [{ name: conf, mountPath: /conf }]
+          resources: { requests: { cpu: 250m, memory: 512Mi } }
+      volumes: [{ name: conf, configMap: { name: otel-collector } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: otel-collector, namespace: lab }
+spec: { selector: { app: otel-collector }, ports: [{ name: otlp-grpc, port: 4317 }] }

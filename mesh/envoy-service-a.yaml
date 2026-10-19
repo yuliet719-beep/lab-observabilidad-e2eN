@@ -1,0 +1,94 @@
+# Generado por render_envoy.py — sidecar mesh para service-a
+admin:
+  address: { socket_address: { address: 0.0.0.0, port_value: 9901 } }
+layered_runtime:
+  layers:
+  - name: static
+    static_layer: {}
+  - name: admin            # permite /runtime_modify (inyección de fallas en caliente)
+    admin_layer: {}
+static_resources:
+  listeners:
+  - name: ingress
+    traffic_direction: INBOUND
+    address: { socket_address: { address: 0.0.0.0, port_value: 10000 } }
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress
+          generate_request_id: true
+          tracing:
+            provider:
+              name: envoy.tracers.opentelemetry
+              typed_config:
+                "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+                grpc_service: { envoy_grpc: { cluster_name: otel }, timeout: 1s }
+                service_name: service-a   # spans del sidecar atribuidos a la carga (igual que istio-proxy)
+          access_log:
+          - name: envoy.access_loggers.open_telemetry
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig
+              common_config:
+                log_name: mesh_access
+                transport_api_version: V3
+                grpc_service: { envoy_grpc: { cluster_name: otel } }
+              resource_attributes:
+                values:
+                - { key: service.name, value: { string_value: mesh-service-a } }
+              body: { string_value: "%REQ(:METHOD)% %REQ(:PATH)% %RESPONSE_CODE% %RESPONSE_FLAGS% %DURATION%ms" }
+              attributes:
+                values:
+                - { key: event.name, value: { string_value: mesh.access } }
+                - { key: http.response.status_code, value: { string_value: "%RESPONSE_CODE%" } }
+                - { key: envoy.response_flags, value: { string_value: "%RESPONSE_FLAGS%" } }
+                - { key: duration_ms, value: { string_value: "%DURATION%" } }
+                - { key: source.address, value: { string_value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%" } }
+                - { key: destination.service, value: { string_value: service-a } }
+                - { key: traceparent, value: { string_value: "%REQ(TRACEPARENT)%" } }
+          route_config:
+            name: local
+            virtual_hosts:
+            - name: app
+              domains: ["*"]
+              routes:
+              - match: { prefix: "/" }
+                route: { cluster: local_app, timeout: 3s }
+          http_filters:
+          - name: envoy.filters.http.fault
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
+              # 0 % por defecto; el experimento activa vía runtime:
+              #   fault.http.delay.fixed_delay_percent / fault.http.delay.fixed_duration_ms
+              #   fault.http.abort.abort_percent / fault.http.abort.http_status
+              delay:
+                fixed_delay: 0.2s
+                percentage: { numerator: 0, denominator: HUNDRED }
+              abort:
+                http_status: 503
+                percentage: { numerator: 0, denominator: HUNDRED }
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+  - name: local_app
+    type: STRICT_DNS
+    connect_timeout: 1s
+    load_assignment:
+      cluster_name: local_app
+      endpoints:
+      - lb_endpoints:
+        - endpoint: { address: { socket_address: { address: service-a, port_value: 8000 } } }
+  - name: otel
+    type: STRICT_DNS
+    connect_timeout: 1s
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config: { http2_protocol_options: {} }
+    load_assignment:
+      cluster_name: otel
+      endpoints:
+      - lb_endpoints:
+        - endpoint: { address: { socket_address: { address: otel-gcp, port_value: 4317 } } }

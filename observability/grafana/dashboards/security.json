@@ -1,0 +1,370 @@
+{
+ "uid": "security",
+ "title": "Golden Signals de Seguridad",
+ "schemaVersion": 39,
+ "time": {
+  "from": "now-30m",
+  "to": "now"
+ },
+ "refresh": "10s",
+ "tags": [
+  "lab-e2e"
+ ],
+ "panels": [
+  {
+   "id": 13,
+   "title": "Intentos de autenticación por resultado",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (outcome) (rate(auth_attempts_total[1m]))",
+     "legendFormat": "{{outcome}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 8,
+      "showPoints": "never"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   },
+   "description": "Golden signal 1: intentos fallidos (fuerza bruta)"
+  },
+  {
+   "id": 14,
+   "title": "Tráfico N-S / E-W / entre nubes (VPC Flow Logs)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (direction) (rate(vpc_flow_bytes_total[1m]))",
+     "legendFormat": "{{direction}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "Bps",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 8,
+      "showPoints": "never"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   },
+   "description": "Golden signal 2: tráfico Norte-Sur / Este-Oeste"
+  },
+  {
+   "id": 15,
+   "title": "CVEs activos por severidad (Trivy)",
+   "type": "bargauge",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (severity) (security_cves_active)",
+     "legendFormat": "{{severity}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "displayMode": "gradient"
+   },
+   "description": "Golden signal 3: CVEs activos"
+  },
+  {
+   "id": 16,
+   "title": "Flujos REJECT por origen",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (src_svc) (rate(vpc_flow_records_total{action=\"REJECT\"}[1m]))",
+     "legendFormat": "{{src_svc}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 8,
+      "showPoints": "never"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   }
+  },
+  {
+   "id": 17,
+   "title": "Flujos E-W fuera de la matriz permitida",
+   "type": "table",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (src_svc, dst_svc, dst_port) (increase(vpc_flow_unexpected_total[5m]))",
+     "legendFormat": "{{src_svc}} → {{dst_svc}}:{{dst_port}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   },
+   "transformations": [
+    {
+     "id": "reduce",
+     "options": {
+      "reducers": [
+       "max"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": 18,
+   "title": "Hallazgos de seguridad (tipo SCC / Security Hub)",
+   "type": "table",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (finding_type, severity) (security_findings_total)",
+     "legendFormat": "{{finding_type}} ({{severity}})",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   },
+   "transformations": [
+    {
+     "id": "reduce",
+     "options": {
+      "reducers": [
+       "lastNotNull"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": 19,
+   "title": "Alertas de seguridad activas",
+   "type": "table",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 16,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "ALERTS{pipeline=\"security\", alertstate=\"firing\"}",
+     "legendFormat": "{{alertname}} {{src_svc}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   },
+   "transformations": [
+    {
+     "id": "reduce",
+     "options": {
+      "reducers": [
+       "lastNotNull"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": 20,
+   "title": "Eventos de autenticación fallida (logs)",
+   "type": "logs",
+   "datasource": {
+    "type": "loki",
+    "uid": "loki"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 24,
+    "w": 24,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "{service_name=\"service-a\"} |= \"security.auth.failure\"",
+     "legendFormat": "",
+     "datasource": {
+      "type": "loki",
+      "uid": "loki"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "showTime": true,
+    "wrapLogMessage": true
+   }
+  }
+ ],
+ "timezone": "browser",
+ "annotations": {
+  "list": [
+   {
+    "name": "Caos / ruido",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prom"
+    },
+    "enable": true,
+    "iconColor": "red",
+    "expr": "max by (kind) (lab_fault_active{kind=\"chaos_error_rate\"} > 0)",
+    "step": "15s",
+    "titleFormat": "Caos activo"
+   }
+  ]
+ }
+}

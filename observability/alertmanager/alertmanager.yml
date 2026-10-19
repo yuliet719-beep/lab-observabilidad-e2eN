@@ -1,0 +1,26 @@
+# Enrutamiento por pipeline. Mismo group_by para static y aiops (comparación justa del Módulo B);
+# el correlador agrupa además las alertas aiops en incidentes y las enriquece con trace_id.
+route:
+  receiver: static
+  group_by: [alertname, service_name]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 4h
+  routes:
+    - matchers: [pipeline="aiops"]
+      receiver: aiops
+    - matchers: [pipeline="security"]
+      receiver: security
+      group_by: [alertname, src_svc]
+receivers:
+  - name: static
+    webhook_configs: [{ url: "http://correlator:9000/alerts/static", send_resolved: true }]
+  - name: aiops
+    webhook_configs: [{ url: "http://correlator:9000/alerts/aiops", send_resolved: true }]
+  - name: security
+    webhook_configs: [{ url: "http://correlator:9000/alerts/security", send_resolved: true }]
+inhibit_rules:
+  # Si hay una alerta correlacionada en el servicio de borde, no paginar la de latencia del mismo servicio
+  - source_matchers: [alertname="AIOpsCorrelatedErrorLatency"]
+    target_matchers: [alertname="AIOpsLatencyAnomalySLO"]
+    equal: [service_name]

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab
+  labels:
+    istio-injection: enabled          # Cloud Service Mesh gestionado inyecta el sidecar Envoy
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: lab-apps, namespace: lab }
