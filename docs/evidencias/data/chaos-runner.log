@@ -1,0 +1,9 @@
+ Container lab-e2e-chaos-runner-run-c8abb1ce85a6 Creating 
+ Container lab-e2e-chaos-runner-run-c8abb1ce85a6 Created 
+03:07:07 Línea base hasta el min 12.0
+03:12:07 Ventana de comparación de ruido (sin caos)
+03:17:07 E1 INICIO: latencia +200 ms en service-b (Envoy fault injection, 100 %)
+03:20:08 E1 FIN (completado=True); recuperación 3.0 min
+03:23:07 E2 INICIO: error rate 10 % en data-service (statement_timeout BD)
+03:26:07 E2 FIN (completado=True); recuperación 3.0 min
+03:29:07 Experimentos terminados

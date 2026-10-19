@@ -1,0 +1,24 @@
+digraph G {
+  rankdir=LR; fontname="Helvetica"; fontsize=10; nodesep=0.25; ranksep=0.45;
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=9, fillcolor="#FFFFFF", color="#0B2545"];
+  edge [fontname="Helvetica", fontsize=8, color="#0B2545"];
+  subgraph cluster_net { label="Internet (N-S)"; style="dashed"; color="#8D99AE";
+    lg [label="Clientes\n(loadgen 10 req/s)"]; at [label="Atacante\n(escenario C)", fillcolor="#FDECEA"]; }
+  subgraph cluster_gcp { label="GCP · GKE Autopilot + Cloud Service Mesh · us-east1"; style="filled"; fillcolor="#E8F0FB"; color="#2F6690";
+    ea [label="Envoy\nsidecar"]; a [label="service-a\nAPI de borde", fillcolor="#D6E4F5"];
+    ed [label="Envoy\nsidecar"]; d [label="data-service\n(3er microservicio)", fillcolor="#D6E4F5"];
+    sql [label="Cloud SQL\nPostgreSQL 16\n(orders)", shape=cylinder];
+    cg [label="OTel Collector\nGCP", fillcolor="#EEF5E9"]; }
+  subgraph cluster_aws { label="AWS · ECS Fargate + Service Connect · us-east-1"; style="filled"; fillcolor="#FDF1E3"; color="#E07A1F";
+    eb [label="Envoy\n(Service Connect)"]; b [label="service-b\npedidos", fillcolor="#FBE2C5"];
+    rds [label="RDS\nPostgreSQL 16\n(inventory)", shape=cylinder];
+    ca [label="ADOT / OTel\nCollector AWS", fillcolor="#EEF5E9"]; }
+  subgraph cluster_obs { label="Plano de observabilidad"; style="filled"; fillcolor="#F4F4F6"; color="#8D99AE";
+    gw [label="OTel Gateway\nservicegraph · spanmetrics", fillcolor="#EEF5E9"];
+    j [label="Trazas\nJaeger ≈ Cloud Trace / X-Ray"]; p [label="Métricas\nPrometheus ≈ GMP / CloudWatch"]; l [label="Logs\nLoki ≈ Cloud Logging"];
+    am [label="Alertmanager"]; c [label="Correlador AIOps\ntrace_id · causa raíz", fillcolor="#DDE7F3"];
+    fl [label="VPC Flow Logs\n(N-S / E-W / entre nubes)"]; tv [label="CVEs (Trivy)\n≈ SCC / Inspector"]; g [label="Grafana\n3 dashboards"]; }
+  lg -> ea; at -> ea [style=dashed, color="#C0392B"]; ea -> a; a -> eb [label="HA VPN"]; eb -> b; b -> ed [label="HA VPN"]; ed -> d; d -> sql; d -> rds [label="HA VPN"];
+  {a ea d ed} -> cg [style=dotted, arrowhead=none]; {b eb} -> ca [style=dotted, arrowhead=none];
+  cg -> gw; ca -> gw; gw -> j; gw -> p; gw -> l; p -> am -> c; c -> j [style=dashed, label="busca trace"]; fl -> p; tv -> p; {j p l} -> g [style=dotted];
+}

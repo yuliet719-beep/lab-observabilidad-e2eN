@@ -1,0 +1,21 @@
+{
+ "t0": 1792378807.0,
+ "noise_window": {
+  "start": 1792379527.0085595,
+  "end": 1792379827.0064318
+ },
+ "E1": {
+  "start": 1792379827.045577,
+  "desc": "latencia +200 ms en service-b (Envoy fault injection, 100 %)",
+  "end": 1792380008.5779417,
+  "completed": true,
+  "recovery_end": 1792380187.0099645
+ },
+ "E2": {
+  "start": 1792380187.0451093,
+  "desc": "error rate 10 % en data-service (statement_timeout BD)",
+  "end": 1792380367.468533,
+  "completed": true,
+  "recovery_end": 1792380547.004616
+ }
+}

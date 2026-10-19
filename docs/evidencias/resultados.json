@@ -1,0 +1,203 @@
+{
+ "t0": 1792378807.0,
+ "t0_iso": "2026-10-18T22:00:07",
+ "ruido": {
+  "ventana_min": 12.0,
+  "notificaciones": {
+   "static": {
+    "total": 11,
+    "pages": 11,
+    "por_alerta": {
+     "StaticHighErrorRate": 4,
+     "StaticHighLatencyP99": 5,
+     "StaticMeshUpstream5xx": 2
+    }
+   }
+  },
+  "instancias_firing": {
+   "static": 19,
+   "aiops": 0
+  },
+  "reduccion_notificaciones_pct": 100.0,
+  "por_dia": {
+   "static": 1320,
+   "aiops": 0
+  }
+ },
+ "experimentos": {
+  "E1": {
+   "descripcion": "latencia +200 ms en service-b (Envoy fault injection, 100 %)",
+   "duracion_falla_s": 182,
+   "mttd_notificacion_s": 15.7,
+   "mttd_firing_prometheus_s": 10.0,
+   "primera_alerta": "AIOpsLatencyAnomalySLO",
+   "paginas_aiops": 3,
+   "notificaciones_estaticas": 9,
+   "alertas_estaticas": {
+    "StaticHighLatencyP99": 3,
+    "StaticMeshUpstream5xx": 3,
+    "StaticHighErrorRate": 3
+   },
+   "incidente": "INC-1792379844",
+   "trace_id": "d7f7a9eb8551a5fdc292f707d2a6a77d",
+   "causa_raiz_candidata": {
+    "service": "service-b",
+    "span": "ingress",
+    "self_time_ms": 232.6
+   },
+   "causa_raiz_correcta": true,
+   "durante_falla": {
+    "requests": 1810,
+    "rps": 9.97,
+    "disponibilidad": 1.0,
+    "latency_good_ratio": 0.9082,
+    "p99_pico_s": 1.474,
+    "error_ratio_pico": 0.0254,
+    "burn_rate_disponibilidad": 0.0,
+    "burn_rate_latencia": 9.2
+   },
+   "ventana_falla_mas_recuperacion": {
+    "requests": 3507,
+    "malas_disponibilidad": 0,
+    "lentas_>300ms": 171
+   },
+   "error_budget_28d": {
+    "presupuesto_disponibilidad_req": 120605,
+    "presupuesto_latencia_req": 241211,
+    "consumo_disponibilidad_pct": 0.0,
+    "consumo_latencia_pct": 0.07
+   }
+  },
+  "E2": {
+   "descripcion": "error rate 10 % en data-service (statement_timeout BD)",
+   "duracion_falla_s": 180,
+   "mttd_notificacion_s": 75.7,
+   "mttd_firing_prometheus_s": 70.0,
+   "primera_alerta": "AIOpsCorrelatedErrorLatency",
+   "paginas_aiops": 3,
+   "notificaciones_estaticas": 9,
+   "alertas_estaticas": {
+    "StaticHighErrorRate": 3,
+    "StaticHighLatencyP99": 3,
+    "StaticMeshUpstream5xx": 3
+   },
+   "incidente": "INC-1792380265",
+   "trace_id": "d5ed37fd74e17fb36160a180f50e69d4",
+   "causa_raiz_candidata": {
+    "service": "data-service",
+    "span": "SELECT",
+    "error.type": null,
+    "db.system.name": "postgresql",
+    "db.query.text": "SELECT pg_sleep(1)"
+   },
+   "causa_raiz_correcta": true,
+   "durante_falla": {
+    "requests": 1715,
+    "rps": 9.51,
+    "disponibilidad": 0.8111,
+    "latency_good_ratio": 0.813,
+    "p99_pico_s": 0.635,
+    "error_ratio_pico": 0.224,
+    "burn_rate_disponibilidad": 37.8,
+    "burn_rate_latencia": 18.7
+   },
+   "ventana_falla_mas_recuperacion": {
+    "requests": 3479,
+    "malas_disponibilidad": 317,
+    "lentas_>300ms": 317
+   },
+   "error_budget_28d": {
+    "presupuesto_disponibilidad_req": 114997,
+    "presupuesto_latencia_req": 229995,
+    "consumo_disponibilidad_pct": 0.28,
+    "consumo_latencia_pct": 0.14
+   }
+  }
+ },
+ "seguridad": {
+  "duracion_ataque_s": 74,
+  "alertas": [
+   {
+    "alerta": "SecUnexpectedEastWestFlow",
+    "origen": "unknown",
+    "t_desde_inicio_s": 51.8,
+    "resumen": "Flujo E-W no permitido unknown -> mesh-service-a:10000"
+   },
+   {
+    "alerta": "SecAuthBruteForce",
+    "origen": null,
+    "t_desde_inicio_s": 51.9,
+    "resumen": "Intentos de autenticación fallidos anómalos (7.345/s)"
+   },
+   {
+    "alerta": "SecUnexpectedEastWestFlow",
+    "origen": "unknown",
+    "t_desde_inicio_s": 112.1,
+    "resumen": "Flujo E-W no permitido unknown -> mesh-service-a:10000"
+   },
+   {
+    "alerta": "SecUnexpectedEastWestFlow",
+    "origen": "unknown",
+    "t_desde_inicio_s": 112.1,
+    "resumen": "Flujo E-W no permitido unknown -> cloudsql-orders:5432"
+   },
+   {
+    "alerta": "SecUnexpectedEastWestFlow",
+    "origen": "unknown",
+    "t_desde_inicio_s": 112.1,
+    "resumen": "Flujo E-W no permitido unknown -> data-service:8000"
+   }
+  ],
+  "hallazgos": 5,
+  "auth_fallidas_pico_por_s": 10.92,
+  "flujos_reject": 0,
+  "flujos_no_permitidos": [
+   {
+    "dst_port": "10000",
+    "dst_svc": "mesh-service-a",
+    "src_svc": "unknown",
+    "conteo": 7.4375
+   },
+   {
+    "dst_port": "8000",
+    "dst_svc": "data-service",
+    "src_svc": "unknown",
+    "conteo": 1.0999999999999999
+   },
+   {
+    "dst_port": "5432",
+    "dst_svc": "cloudsql-orders",
+    "src_svc": "unknown",
+    "conteo": 1.0999999999999999
+   }
+  ]
+ },
+ "cves": {
+  "lab/data-service:1.0": {
+   "CRITICAL": 0,
+   "HIGH": 47,
+   "MEDIUM": 66,
+   "LOW": 63,
+   "UNKNOWN": 3
+  },
+  "lab/service-b:1.0": {
+   "CRITICAL": 0,
+   "HIGH": 47,
+   "MEDIUM": 66,
+   "LOW": 63,
+   "UNKNOWN": 3
+  },
+  "lab/service-a:1.0": {
+   "CRITICAL": 0,
+   "HIGH": 47,
+   "MEDIUM": 66,
+   "LOW": 63,
+   "UNKNOWN": 3
+  }
+ },
+ "flujos_por_direccion_bytes_1h": {
+  "north-south": 6713851,
+  "east-west": 132420902,
+  "cross-cloud": 27244990
+ }
+}

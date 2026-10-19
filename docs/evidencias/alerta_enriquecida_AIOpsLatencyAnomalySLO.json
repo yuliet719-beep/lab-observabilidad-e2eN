@@ -1,0 +1,41 @@
+{
+ "received_at": 1792379933.173574,
+ "received_iso": "2026-10-19T03:18:53.173581+00:00",
+ "pipeline": "aiops",
+ "status": "firing",
+ "alertname": "AIOpsLatencyAnomalySLO",
+ "service": "service-a",
+ "severity": "page",
+ "startsAt": "2026-10-19T03:18:42.673Z",
+ "fingerprint": "6a17f25a6a9e065d",
+ "summary": "service-a: p99 872.1ms fuera de banda y sobre SLO",
+ "incident_id": "INC-1792379844",
+ "trace_id": "d2ee09419427613d854847eb6c5adf66",
+ "trace_url": "http://localhost:16686/trace/d2ee09419427613d854847eb6c5adf66",
+ "root_cause_candidate": {
+  "service": "service-b",
+  "span": "ingress",
+  "self_time_ms": 200.4
+ },
+ "service_graph": {
+  "failing_edges": [],
+  "slow_edges": [
+   "service-a->service-b: 664ms",
+   "user->service-a: 758ms"
+  ]
+ },
+ "recent_changes": [
+  {
+   "ts": 1792379827.0456994,
+   "kind": "chaos-experiment",
+   "detail": "E1 start: latencia +200 ms en service-b (Envoy fault injection, 100 %)"
+  }
+ ],
+ "slo": {
+  "error_ratio_1m": 0.0,
+  "latency_p99_1m_s": 0.4982,
+  "error_band_upper": 0.0175
+ },
+ "enrichment_error": null,
+ "enrichment_ms": 11877
+}

@@ -1,0 +1,59 @@
+{
+ "received_at": 1792380267.9057274,
+ "received_iso": "2026-10-19T03:24:27.905733+00:00",
+ "pipeline": "aiops",
+ "status": "firing",
+ "alertname": "AIOpsCorrelatedErrorLatency",
+ "service": "data-service",
+ "severity": "page",
+ "startsAt": "2026-10-19T03:24:12.673Z",
+ "fingerprint": "48ddea6ec43b6f22",
+ "summary": "data-service: error rate anómalo (10.9%) correlacionado con p99 > SLO",
+ "incident_id": "INC-1792380265",
+ "trace_id": "130fa61c6803acbee2a0e4bda5bd141f",
+ "trace_url": "http://localhost:16686/trace/130fa61c6803acbee2a0e4bda5bd141f",
+ "root_cause_candidate": {
+  "service": "data-service",
+  "span": "SELECT",
+  "error.type": null,
+  "db.system.name": "postgresql",
+  "db.query.text": "SELECT pg_sleep(1)"
+ },
+ "service_graph": {
+  "failing_edges": [
+   "user->service-a: 11.6%",
+   "service-a->service-b: 14.3%",
+   "service-b->data-service: 8.1%",
+   "data-service->postgresql: 5.4%"
+  ],
+  "slow_edges": [
+   "user->service-a: 616ms",
+   "service-a->service-b: 499ms",
+   "service-b->data-service: 479ms"
+  ]
+ },
+ "recent_changes": [
+  {
+   "ts": 1792379827.0456994,
+   "kind": "chaos-experiment",
+   "detail": "E1 start: latencia +200 ms en service-b (Envoy fault injection, 100 %)"
+  },
+  {
+   "ts": 1792380008.578522,
+   "kind": "chaos-experiment",
+   "detail": "E1 end"
+  },
+  {
+   "ts": 1792380187.0452976,
+   "kind": "chaos-experiment",
+   "detail": "E2 start: error rate 10 % en data-service (statement_timeout BD)"
+  }
+ ],
+ "slo": {
+  "error_ratio_1m": 0.121,
+  "latency_p99_1m_s": 0.3956,
+  "error_band_upper": 0.009
+ },
+ "enrichment_error": null,
+ "enrichment_ms": 1187
+}

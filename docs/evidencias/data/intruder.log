@@ -1,0 +1,7 @@
+ Container lab-e2e-intruder-run-84b9a99e0f9f Creating 
+ Container lab-e2e-intruder-run-84b9a99e0f9f Created 
+[1] fuerza bruta contra /login
+    668 intentos
+[2] escaneo de puertos E-W en la VPC GCP
+[3] movimiento lateral: conexión directa a Cloud SQL y a data-service (bypass del mesh)
+fin
